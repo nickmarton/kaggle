@@ -30,7 +30,7 @@ def load_data(
     """
 
     train = pd.read_csv(train_file)
-    test = pd.read_csv(train_file)
+    test = pd.read_csv(test_file)
 
     y_train = pd.DataFrame(train["label"], columns=["label"])
     y_train = np.reshape(np.array(y_train, dtype=np.uint8), (len(y_train), ))
@@ -41,9 +41,7 @@ def load_data(
         X_train_reshape[i] = row.reshape(1, 28, 28)
     X_train = X_train_reshape
 
-    y_test = pd.DataFrame(test["label"], columns=["label"])
-    y_test = np.reshape(np.array(y_test, dtype=np.uint8), (len(y_test), ))
-    X_test = test.ix[:, 1:] / 255
+    X_test = test / 255
     X_test_reshape = np.zeros((len(X_test), 1, 28, 28), dtype=np.float16)
 
     for i, row in enumerate(np.array(X_test)):
@@ -54,13 +52,13 @@ def load_data(
         try:
             X_train, X_valid, y_train, y_valid = train_test_split(
                 X_train, y_train, test_size=validation_size)
-            return X_train, y_train, X_valid, y_valid, X_test, y_test
+            return X_train, y_train, X_valid, y_valid, X_test
         except TypeError:
             pass
         except ValueError:
             pass
 
-    return X_train, y_train, X_test, y_test
+    return X_train, y_train, X_test
 
 
 def build_cnn(input_var=None):
@@ -69,28 +67,16 @@ def build_cnn(input_var=None):
     network = lasagne.layers.InputLayer(shape=(None, 1, 28, 28),
                                         input_var=input_var)
 
-    '''
     network = lasagne.layers.Conv2DLayer(
-        network, num_filters=32,
-        filter_size=(5, 5), nonlinearity=lasagne.nonlinearities.rectify)
-    '''
-
-    network = lasagne.layers.Conv2DLayer(
-        network, num_filters=49,
-        filter_size=(4, 4), nonlinearity=lasagne.nonlinearities.rectify)
+        network, num_filters=50,
+        filter_size=(6, 6), nonlinearity=lasagne.nonlinearities.rectify)
 
     network = lasagne.layers.MaxPool2DLayer(
         network, pool_size=(2, 2))
 
-    '''
     network = lasagne.layers.Conv2DLayer(
-        network, num_filters=32,
-        filter_size=(5, 5), nonlinearity=lasagne.nonlinearities.rectify)
-    '''
-
-    network = lasagne.layers.Conv2DLayer(
-        network, num_filters=49,
-        filter_size=(4, 4), nonlinearity=lasagne.nonlinearities.rectify)
+        network, num_filters=50,
+        filter_size=(6, 6), nonlinearity=lasagne.nonlinearities.rectify)
 
     network = lasagne.layers.MaxPool2DLayer(
         network, pool_size=(2, 2))
@@ -98,7 +84,7 @@ def build_cnn(input_var=None):
     network = lasagne.layers.DropoutLayer(network, p=0.5)
 
     network = lasagne.layers.DenseLayer(
-        network, num_units=200,
+        network, num_units=500,
         nonlinearity=lasagne.nonlinearities.rectify)
 
     network = lasagne.layers.DropoutLayer(network, p=0.5)
@@ -112,10 +98,12 @@ def build_cnn(input_var=None):
 
 def main():
     """."""
-    num_epochs, batch_size = 50, 2000
+    num_epochs, batch_size = 200, 2000
 
-    X_train, y_train, X_val, y_val, X_test, y_test = load_data(
-        validation_size=0.33)
+    # X_train, y_train, X_val, y_val, X_test = load_data(
+    #    validation_size=0.99)
+
+    X_train, y_train, X_test = load_data()
 
     # Prepare Theano variables for inputs and targets
     input_var = T.tensor4('inputs')
@@ -155,6 +143,7 @@ def main():
             train_err += train_fn(inputs, targets)
             train_batches += 1
 
+        '''
         # And a full pass over the validation data:
         val_err = 0
         val_acc = 0
@@ -166,31 +155,22 @@ def main():
             val_err += err
             val_acc += acc
             val_batches += 1
+        '''
 
         # Then we print the results for this epoch:
         print("Epoch {} of {} took {:.3f}s".format(
             epoch + 1, num_epochs, time.time() - start_time))
         print("  training loss:\t\t{:.6f}".format(train_err / train_batches))
-        print("  validation loss:\t\t{:.6f}".format(val_err / val_batches))
-        print("  validation accuracy:\t\t{:.2f} %".format(
-            val_acc / val_batches * 100))
+        # print("  validation loss:\t\t{:.6f}".format(val_err / val_batches))
+        # print("  validation accuracy:\t\t{:.2f} %".format(
+        #    val_acc / val_batches * 100))
 
-    # After training, we compute and print the test error:
-    test_err = 0
-    test_acc = 0
-    test_batches = 0
-    for batch in iterate_minibatches(X_test, y_test, batch_size,
-                                     shuffle=False):
-        inputs, targets = batch
-        err, acc = val_fn(inputs, targets)
-        test_err += err
-        test_acc += acc
-        test_batches += 1
+    predict_function = theano.function([input_var], test_prediction)
 
-    print("Final results:")
-    print("  test loss:\t\t\t{:.6f}".format(test_err / test_batches))
-    print("  test accuracy:\t\t{:.2f} %".format(
-        test_acc / test_batches * 100))
+    y_pred = predict_function(X_test)
+    df = pd.DataFrame(np.argmax(y_pred, axis=1), columns=["Label"])
+    df.index += 1
+    df.to_csv("predictions_6x6filter_50kernel_2x2pool_500hidden_200epoch_.csv")
 
 if __name__ == "__main__":
     main()
