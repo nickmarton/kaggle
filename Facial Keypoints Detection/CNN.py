@@ -6,6 +6,8 @@ Note: Only the labels contain missing values in all of the data.
 
 from __future__ import division, print_function
 import time
+import theano
+import lasagne
 import logging
 import numpy as np
 import pandas as pd
@@ -13,11 +15,31 @@ import theano.tensor as T
 from sklearn.cross_validation import train_test_split
 
 
+def set_verbosity(verbose_level=3):
+    """Set the level of verbosity of the Preprocessing."""
+    if not type(verbose_level) == int:
+        raise TypeError("verbose_level must be an int")
+
+    if verbose_level < 0 or verbose_level > 4:
+        raise ValueError("verbose_level must be between 0 and 4")
+
+    verbosity = [logging.CRITICAL,
+                 logging.ERROR,
+                 logging.WARNING,
+                 logging.INFO,
+                 logging.DEBUG]
+
+    logging.basicConfig(
+        format='%(asctime)s:\t %(message)s',
+        datefmt='%m/%d/%Y %I:%M:%S %p',
+        level=verbosity[verbose_level])
+
+
 def imputate(frame):
     """Deal with missing values in a DataFrame."""
     start_time = time.time()
 
-    frame.fillna(-1, inplace=True)
+    frame.dropna(inplace=True)
 
     time_diff = time.time() - start_time
     logging.info("Imputation completed in " + str(time_diff) + " seconds")
@@ -32,10 +54,14 @@ def parse_data(train_file="training.csv", test_file="test.csv"):
     start_time = time.time()
 
     train = pd.read_csv(train_file)
+    imputate(train)
     test = pd.read_csv(test_file)
 
-    y_train = train.ix[:, :-1] / 255
-    imputate(y_train)
+    # Get y_train then scale between [-1, 1]
+    y_train = train.ix[:, :-1]
+    y_max = np.max(np.array(y_train))
+    y_min = np.min(np.array(y_train))
+    y_train = (2 * (y_train - y_min) / (y_max - y_min)) - 1
 
     # Convert Image column in train into DataFrame
     pixel_columns = ["pixel" + str(i + 1) for i in range(96 * 96)]
@@ -106,48 +132,171 @@ def load_data(validation_size=None):
     return X_train, y_train, X_test
 
 
-def set_verbosity(verbose_level=3):
-    """Set the level of verbosity of the Preprocessing."""
-    if not type(verbose_level) == int:
-        raise TypeError("verbose_level must be an int")
+def build_cnn(input_var=None):
+    """Build a CNN specific to MNIST data."""
+    start_time = time.time()
 
-    if verbose_level < 0 or verbose_level > 4:
-        raise ValueError("verbose_level must be between 0 and 4")
+    network = lasagne.layers.InputLayer(shape=(None, 1, 96, 96),
+                                        input_var=input_var)
 
-    verbosity = [
-        logging.CRITICAL,
-        logging.ERROR,
-        logging.WARNING,
-        logging.INFO,
-        logging.DEBUG]
+    network = lasagne.layers.Conv2DLayer(
+        network, num_filters=32,
+        filter_size=(5, 5), nonlinearity=lasagne.nonlinearities.rectify)
 
-    logging.basicConfig(
-        format='%(asctime)s:\t %(message)s',
-        datefmt='%m/%d/%Y %I:%M:%S %p',
-        level=verbosity[verbose_level])
+    network = lasagne.layers.MaxPool2DLayer(
+        network, pool_size=(2, 2))
+
+    network = lasagne.layers.Conv2DLayer(
+        network, num_filters=32,
+        filter_size=(5, 5), nonlinearity=lasagne.nonlinearities.rectify)
+
+    network = lasagne.layers.MaxPool2DLayer(
+        network, pool_size=(2, 2))
+
+    network = lasagne.layers.DropoutLayer(network, p=0.5)
+
+    network = lasagne.layers.DenseLayer(
+        network, num_units=256, nonlinearity=lasagne.nonlinearities.rectify)
+
+    network = lasagne.layers.DropoutLayer(network, p=0.5)
+
+    network = lasagne.layers.DenseLayer(
+        network, num_units=30, nonlinearity=None)
+
+    time_diff = time.time() - start_time
+    logging.info("Built network in " + str(time_diff) + " seconds")
+
+    return network
 
 
-def main():
+def iterate_minibatches(inputs, targets, batchsize, shuffle=False):
+    """Train via batches to avoid memory error."""
+    assert len(inputs) == len(targets)
+    if shuffle:
+        indices = np.arange(len(inputs))
+        np.random.shuffle(indices)
+    for start_idx in range(0, len(inputs) - batchsize + 1, batchsize):
+        if shuffle:
+            excerpt = indices[start_idx:start_idx + batchsize]
+        else:
+            excerpt = slice(start_idx, start_idx + batchsize)
+        yield inputs[excerpt], targets[excerpt]
+
+
+def main(verbose=3, num_epochs=30, batch_size=500):
     """."""
 
-    set_verbosity(0)
+    set_verbosity(verbose)
 
-    # parse_data()
-    X_train, y_train, X_val, y_val, X_test = load_data(
-        validation_size=0.33)
+    parse_data()
 
-    # X_train, y_train, X_test = load_data()
+    # X_train, y_train, X_val, y_val, X_test = load_data(
+    #    validation_size=0.33)
 
-    print (X_train.shape)
-    print (y_train.shape)
-    print (X_val.shape)
-    print (y_val.shape)
-    print (X_test.shape)
+    X_train, y_train, X_test = load_data()
 
+    # Log array shapes for debugging
+    logging.debug("X_train shape: " + str(X_train.shape))
+    logging.debug("y_train shape: " + str(y_train.shape))
+    try:
+        logging.debug("X_val shape: " + str(X_val.shape))
+        logging.debug("y_val shape: " + str(y_val.shape))
+    except NameError:
+        pass
+    logging.debug("X_test shape: " + str(X_test.shape) + '\n')
+
+    # Create tensors for X and y and build network
     input_var = T.tensor4('inputs')
-    target_var = T.ivector('targets')
+    target_var = T.matrix('targets')
 
-    # network = build_cnn(input_var)
+    network = build_cnn(input_var)
+
+    prediction = lasagne.layers.get_output(network)
+    loss = lasagne.objectives.squared_error(prediction, target_var)
+    loss = np.sqrt(loss.mean())
+
+    params = lasagne.layers.get_all_params(network, trainable=True)
+    updates = lasagne.updates.nesterov_momentum(
+        loss, params, learning_rate=0.01, momentum=0.9)
+
+    train_fn = theano.function([input_var, target_var], loss, updates=updates)
+
+    test_prediction = lasagne.layers.get_output(network, deterministic=True)
+
+    '''
+    test_loss = lasagne.objectives.squared_error(test_prediction, target_var)
+    test_loss = np.sqrt(test_loss.mean())
+
+    val_fn = theano.function([input_var, target_var], test_loss)
+    '''
+
+    logging.info("Starting training...")
+    for epoch in range(num_epochs):
+        # In each epoch, we do a full pass over the training data:
+        train_err = 0
+        train_batches = 0
+        start_time = time.time()
+        for batch in iterate_minibatches(X_train,
+                                         y_train,
+                                         batch_size,
+                                         shuffle=True):
+            inputs, targets = batch
+            train_err += train_fn(inputs, targets)
+            train_batches += 1
+            logging.info("Done " + str(train_batches) + " batches")
+
+        '''
+        # And a full pass over the validation data:
+        val_err = 0
+        val_acc = 0
+        val_batches = 0
+        for batch in iterate_minibatches(X_val, y_val, batch_size,
+                                         shuffle=False):
+            inputs, targets = batch
+            err, acc = val_fn(inputs, targets)
+            val_err += err
+            val_acc += acc
+            val_batches += 1
+        '''
+
+        # Then we print the results for this epoch:
+        print("Epoch {} of {} took {:.3f}s".format(
+            epoch + 1, num_epochs, time.time() - start_time))
+        print("  training loss:\t\t{:.6f}".format(train_err / train_batches))
+        # print("  validation loss:\t\t{:.6f}".format(val_err / val_batches))
+        # print("  validation accuracy:\t\t{:.2f} %".format(
+        #    val_acc / val_batches * 100))
+
+    logging.info("Finished training; beginning prediction")
+    start_time = time.time()
+
+    predict_function = theano.function([input_var], test_prediction)
+
+    y_pred = predict_function(X_test)
+
+    columns = ["left_eye_center_x", "left_eye_center_y",
+               "right_eye_center_x", "right_eye_center_y",
+               "left_eye_inner_corner_x", "left_eye_inner_corner_y",
+               "left_eye_outer_corner_x", "left_eye_outer_corner_y",
+               "right_eye_inner_corner_x", "right_eye_inner_corner_y",
+               "right_eye_outer_corner_x", "right_eye_outer_corner_y",
+               "left_eyebrow_inner_end_x", "left_eyebrow_inner_end_y",
+               "left_eyebrow_outer_end_x", "left_eyebrow_outer_end_y",
+               "right_eyebrow_inner_end_x", "right_eyebrow_inner_end_y",
+               "right_eyebrow_outer_end_x", "right_eyebrow_outer_end_y",
+               "nose_tip_x", "nose_tip_y",
+               "mouth_left_corner_x", "mouth_left_corner_y",
+               "mouth_right_corner_x", "mouth_right_corner_y",
+               "mouth_center_top_lip_x", "mouth_center_top_lip_y",
+               "mouth_center_bottom_lip_x", "mouth_center_bottom_lip_y"]
+
+    predictions_df = pd.DataFrame(y_pred, columns=columns)
+    predictions_df.index += 1
+    predictions_df.index.name = "ImageId"
+    predictions_df.to_csv("raw_predictions.csv")
+
+    time_diff = time.time() - start_time
+    logging.info("Predictions complete in " + str(time_diff) + " seconds")
 
 if __name__ == "__main__":
     main()
