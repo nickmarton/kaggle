@@ -98,7 +98,7 @@ def main():
     X_train, y_train, X_val, y_val, X_test = load_data(
         column_transforms, val_size=.20, drop_columns=columns_to_drop)
 
-    #X_train, y_train, X_test = load_data(column_transforms,
+    # X_train, y_train, X_test = load_data(column_transforms,
     #                                     drop_columns=columns_to_drop)
 
     clf = RandomForestClassifier(n_estimators=20)
@@ -110,6 +110,7 @@ def main():
     y_pred = clf.predict(X_test)
     test_df = pd.DataFrame(y_pred, columns=["Survived"])
     test_df.index += 892
+    test_df.index.name = "PassengerId"
     test_df.to_csv("Predictions.csv")
     '''
 

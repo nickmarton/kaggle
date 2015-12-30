@@ -170,6 +170,7 @@ def main():
     y_pred = predict_function(X_test)
     df = pd.DataFrame(np.argmax(y_pred, axis=1), columns=["Label"])
     df.index += 1
+    df.index.name = "ImageId"
     df.to_csv("predictions_6x6filter_50kernel_2x2pool_500hidden_200epoch_.csv")
 
 if __name__ == "__main__":
