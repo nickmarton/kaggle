@@ -132,34 +132,101 @@ def load_data(validation_size=None):
     return X_train, y_train, X_test
 
 
-def build_cnn(input_var=None):
-    """Build a CNN specific to MNIST data."""
+def build_simple_cnn(input_var=None):
+    """Build a simple CNN for Facial Keypoints Detection."""
+    # INPUT -> [CONV -> RELU -> POOL]*2 -> FC -> RELU -> FC
+
     start_time = time.time()
 
+    # Begin with input layer
     network = lasagne.layers.InputLayer(shape=(None, 1, 96, 96),
                                         input_var=input_var)
 
+    # Add first [CONV -> RELU -> POOL]
     network = lasagne.layers.Conv2DLayer(
-        network, num_filters=32,
-        filter_size=(5, 5), nonlinearity=lasagne.nonlinearities.rectify)
+        network, num_filters=32, filter_size=(5, 5),
+        nonlinearity=lasagne.nonlinearities.rectify)
 
-    network = lasagne.layers.MaxPool2DLayer(
-        network, pool_size=(2, 2))
+    network = lasagne.layers.MaxPool2DLayer(network, pool_size=(2, 2))
 
+    # Add second [CONV -> RELU -> POOL]
     network = lasagne.layers.Conv2DLayer(
-        network, num_filters=32,
-        filter_size=(5, 5), nonlinearity=lasagne.nonlinearities.rectify)
+        network, num_filters=32, filter_size=(5, 5),
+        nonlinearity=lasagne.nonlinearities.rectify)
 
-    network = lasagne.layers.MaxPool2DLayer(
-        network, pool_size=(2, 2))
+    network = lasagne.layers.MaxPool2DLayer(network, pool_size=(2, 2))
 
+    # Add FC -> RELU, throw in dropout
     network = lasagne.layers.DropoutLayer(network, p=0.5)
-
     network = lasagne.layers.DenseLayer(
         network, num_units=256, nonlinearity=lasagne.nonlinearities.rectify)
 
+    # Add output layer, throw in dropout; use identity fn for nonlinearity
     network = lasagne.layers.DropoutLayer(network, p=0.5)
+    network = lasagne.layers.DenseLayer(
+        network, num_units=30, nonlinearity=None)
 
+    time_diff = time.time() - start_time
+    logging.info("Built network in " + str(time_diff) + " seconds")
+
+    return network
+
+
+def build_complex_cnn(input_var=None):
+    """Build a CNN specific to MNIST data."""
+    # INPUT -> [CONV -> RELU -> CONV -> RELU -> POOL]*3 -> [FC -> RELU]*2 -> FC
+
+    start_time = time.time()
+
+    # Start with input
+    network = lasagne.layers.InputLayer(shape=(None, 1, 96, 96),
+                                        input_var=input_var)
+
+    # Add first [CONV -> RELU -> CONV -> RELU -> POOL]
+    network = lasagne.layers.Conv2DLayer(
+        network, num_filters=32, filter_size=(5, 5),
+        nonlinearity=lasagne.nonlinearities.rectify)
+
+    network = lasagne.layers.Conv2DLayer(
+        network, num_filters=32, filter_size=(5, 5),
+        nonlinearity=lasagne.nonlinearities.rectify)
+
+    network = lasagne.layers.MaxPool2DLayer(network, pool_size=(2, 2))
+
+    # Add second [CONV -> RELU -> CONV -> RELU -> POOL]
+    network = lasagne.layers.Conv2DLayer(
+        network, num_filters=32, filter_size=(5, 5),
+        nonlinearity=lasagne.nonlinearities.rectify)
+
+    network = lasagne.layers.Conv2DLayer(
+        network, num_filters=32, filter_size=(5, 5),
+        nonlinearity=lasagne.nonlinearities.rectify)
+
+    network = lasagne.layers.MaxPool2DLayer(network, pool_size=(2, 2))
+
+    # Add third [CONV -> RELU -> CONV -> RELU -> POOL]
+    network = lasagne.layers.Conv2DLayer(
+        network, num_filters=32, filter_size=(5, 5),
+        nonlinearity=lasagne.nonlinearities.rectify)
+
+    network = lasagne.layers.Conv2DLayer(
+        network, num_filters=32, filter_size=(5, 5),
+        nonlinearity=lasagne.nonlinearities.rectify)
+
+    network = lasagne.layers.MaxPool2DLayer(network, pool_size=(2, 2))
+
+    # Add first [FC -> RELU], throw in dropout
+    network = lasagne.layers.DropoutLayer(network, p=0.5)
+    network = lasagne.layers.DenseLayer(
+        network, num_units=256, nonlinearity=lasagne.nonlinearities.rectify)
+
+    # Add second [FC -> RELU], throw in dropout
+    network = lasagne.layers.DropoutLayer(network, p=0.5)
+    network = lasagne.layers.DenseLayer(
+        network, num_units=128, nonlinearity=lasagne.nonlinearities.rectify)
+
+    # Add output layer, throw in dropout; use identity fn for nonlinearity
+    network = lasagne.layers.DropoutLayer(network, p=0.5)
     network = lasagne.layers.DenseLayer(
         network, num_units=30, nonlinearity=None)
 
@@ -209,7 +276,7 @@ def main(verbose=3, num_epochs=30, batch_size=500):
     input_var = T.tensor4('inputs')
     target_var = T.matrix('targets')
 
-    network = build_cnn(input_var)
+    network = build_complex_cnn(input_var)
 
     prediction = lasagne.layers.get_output(network)
     loss = lasagne.objectives.squared_error(prediction, target_var)
