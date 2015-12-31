@@ -1,11 +1,106 @@
 """Random forest model for Titanic dataset."""
 
 from __future__ import print_function
+import logging
 import numpy as np
 import pandas as pd
 from sklearn.cross_validation import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report
+
+
+def set_verbosity(verbose_level=3):
+    """Set the level of verbosity of the Preprocessing."""
+    if not type(verbose_level) == int:
+        raise TypeError("verbose_level must be an int")
+
+    if verbose_level < 0 or verbose_level > 4:
+        raise ValueError("verbose_level must be between 0 and 4")
+
+    verbosity = [logging.CRITICAL,
+                 logging.ERROR,
+                 logging.WARNING,
+                 logging.INFO,
+                 logging.DEBUG]
+
+    logging.basicConfig(
+        format='%(asctime)s:\t %(message)s',
+        datefmt='%m/%d/%Y %I:%M:%S %p',
+        level=verbosity[verbose_level])
+
+
+def ticket_transform(unique_column_vals):
+    """Bucketize Parch."""
+
+    def bucket_ticket(ticket):
+        """Bucket an individual ticket."""
+        try:
+            bucket = int(ticket[0][0])
+            if bucket == 1 or bucket == 2:
+                return bucket
+            else:
+                return 3
+        except ValueError:
+            bucket = ord(ticket[0][0])
+            if bucket == 80:
+                return bucket
+            else:
+                return -1
+            # return bucket
+
+    column_map = {val: bucket_ticket(val) for val in unique_column_vals}
+    return column_map
+
+
+def sibsp_transform(unique_column_vals):
+    """Bucketize SibSp."""
+
+    def bucket_sibsp(sibsp):
+        """Bucket an individual SipSp."""
+        if sibsp > 2:
+            return 3
+        else:
+            return sibsp
+        return sibsp
+
+    column_map = {val: bucket_sibsp(val) for val in unique_column_vals}
+    return column_map
+
+
+def name_transform(unique_column_vals):
+    """Bucketize names."""
+
+    def bucket_name(name):
+        """Bucket an individual name."""
+
+        for entry in (name.split()):
+            if '.' in entry:
+                title = entry
+                break
+
+        bucket_all_dead = ["Capt.", "Don.", "Jonkheer.", "Rev."]
+        bucket_all_alive = ["Countess.", "Lady.", "Mlle.", "Mme.", "Ms.",
+                            "Sir."]
+        bucket_equal = ["Col.", "Major."]
+        bucket_more_alive = ["Master.", "Miss.", "Mrs."]
+        bucket_more_dead = ["Mr."]
+
+        if title in bucket_all_dead:
+            return 1
+        elif title in bucket_all_alive:
+            return 2
+        elif title in bucket_equal:
+            return 3
+        elif title in bucket_more_alive:
+            return 4
+        elif title in bucket_more_dead:
+            return 5
+        else:
+            logging.info("UNKNOWN TITLE: " + title)
+            return 6
+
+    column_map = {val: bucket_name(val) for val in unique_column_vals}
+    return column_map
 
 
 def default_transform(unique_column_vals):
@@ -93,26 +188,33 @@ def load_data(columnn_transforms, train_file="train.csv", test_file="test.csv",
 
 def main():
     """Entry point."""
-    columns_to_drop = ["Name"]
-    column_transforms = {"default": default_transform}
-    X_train, y_train, X_val, y_val, X_test = load_data(
-        column_transforms, val_size=.20, drop_columns=columns_to_drop)
+    set_verbosity(0)
 
-    # X_train, y_train, X_test = load_data(column_transforms,
-    #                                     drop_columns=columns_to_drop)
+    columns_to_drop = []
+    column_transforms = {"default": default_transform,
+                         "Name": name_transform,
+                         "SibSp": sibsp_transform}#,
+                         #"Ticket": ticket_transform}
+    # X_train, y_train, X_val, y_val, X_test = load_data(
+    #    column_transforms, val_size=.20, drop_columns=columns_to_drop)
+
+    X_train, y_train, X_test = load_data(column_transforms,
+                                         drop_columns=columns_to_drop)
 
     clf = RandomForestClassifier(n_estimators=20)
     clf.fit(X_train, y_train)
-    y_pred = clf.predict(X_val)
-    print (classification_report(y_val, y_pred))
 
     '''
+    y_pred = clf.predict(X_val)
+    print (classification_report(y_val, y_pred))
+    '''
+    # '''
     y_pred = clf.predict(X_test)
     test_df = pd.DataFrame(y_pred, columns=["Survived"])
     test_df.index += 892
     test_df.index.name = "PassengerId"
     test_df.to_csv("Predictions.csv")
-    '''
+    # '''
 
 if __name__ == "__main__":
     main()
