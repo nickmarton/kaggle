@@ -22,6 +22,13 @@ def iterate_minibatches(inputs, targets, batchsize, shuffle=False):
         yield inputs[excerpt], targets[excerpt]
 
 
+def iterate_test_minibatches(inputs, batchsize, shuffle=False):
+    """Train via batches to avoid memory error."""
+    for start_idx in range(0, len(inputs) - batchsize + 1, batchsize):
+        excerpt = slice(start_idx, start_idx + batchsize)
+        yield inputs[excerpt]
+
+
 def load_data(
         train_file="train.csv", test_file="test.csv", validation_size=None):
     """
@@ -33,16 +40,16 @@ def load_data(
     test = pd.read_csv(test_file)
 
     y_train = pd.DataFrame(train["label"], columns=["label"])
-    y_train = np.reshape(np.array(y_train, dtype=np.uint8), (len(y_train), ))
+    y_train = np.reshape(np.array(y_train, dtype=np.int32), (len(y_train), ))
     X_train = train.ix[:, 1:] / 255
-    X_train_reshape = np.zeros((len(X_train), 1, 28, 28), dtype=np.float16)
+    X_train_reshape = np.zeros((len(X_train), 1, 28, 28), dtype=np.float32)
 
     for i, row in enumerate(np.array(X_train)):
         X_train_reshape[i] = row.reshape(1, 28, 28)
     X_train = X_train_reshape
 
     X_test = test / 255
-    X_test_reshape = np.zeros((len(X_test), 1, 28, 28), dtype=np.float16)
+    X_test_reshape = np.zeros((len(X_test), 1, 28, 28), dtype=np.float32)
 
     for i, row in enumerate(np.array(X_test)):
         X_test_reshape[i] = row.reshape(1, 28, 28)
@@ -68,14 +75,14 @@ def build_cnn(input_var=None):
                                         input_var=input_var)
 
     network = lasagne.layers.Conv2DLayer(
-        network, num_filters=50,
+        network, num_filters=70,
         filter_size=(6, 6), nonlinearity=lasagne.nonlinearities.rectify)
 
     network = lasagne.layers.MaxPool2DLayer(
         network, pool_size=(2, 2))
 
     network = lasagne.layers.Conv2DLayer(
-        network, num_filters=50,
+        network, num_filters=70,
         filter_size=(6, 6), nonlinearity=lasagne.nonlinearities.rectify)
 
     network = lasagne.layers.MaxPool2DLayer(
@@ -98,7 +105,7 @@ def build_cnn(input_var=None):
 
 def main():
     """."""
-    num_epochs, batch_size = 200, 2000
+    num_epochs, batch_size = 350, 1000
 
     # X_train, y_train, X_val, y_val, X_test = load_data(
     #    validation_size=0.99)
@@ -106,7 +113,7 @@ def main():
     X_train, y_train, X_test = load_data()
 
     # Prepare Theano variables for inputs and targets
-    input_var = T.tensor4('inputs')
+    input_var = T.ftensor4('inputs')
     target_var = T.ivector('targets')
 
     network = build_cnn(input_var)
@@ -167,11 +174,16 @@ def main():
 
     predict_function = theano.function([input_var], test_prediction)
 
-    y_pred = predict_function(X_test)
-    df = pd.DataFrame(np.argmax(y_pred, axis=1), columns=["Label"])
-    df.index += 1
-    df.index.name = "ImageId"
-    df.to_csv("predictions_6x6filter_50kernel_2x2pool_500hidden_200epoch_.csv")
+    frames = []
+    for i, batch in enumerate(iterate_test_minibatches(X_test, batch_size)):
+        y_pred = predict_function(batch)
+        df = pd.DataFrame(np.argmax(y_pred, axis=1), columns=["Label"])
+        df.index += (i * batch_size) + 1
+        frames.append(df)
+
+    predictions = pd.concat(frames)
+    predictions.index.name = "ImageId"
+    predictions.to_csv("predictions_6x6filter_70kernel_2x2pool_500hidden_350epoch.csv")
 
 if __name__ == "__main__":
     main()

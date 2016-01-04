@@ -39,6 +39,8 @@ def imputate(frame):
     """Deal with missing values in a DataFrame."""
     start_time = time.time()
 
+    frame[frame.isnull().any(axis=1)].to_csv("train_incomplete.csv",
+                                             index=False)
     frame.dropna(inplace=True)
 
     time_diff = time.time() - start_time
@@ -55,6 +57,7 @@ def parse_data(train_file="training.csv", test_file="test.csv"):
 
     train = pd.read_csv(train_file)
     imputate(train)
+
     test = pd.read_csv(test_file)
 
     # Get y_train then scale between [-1, 1]
@@ -98,16 +101,16 @@ def load_data(validation_size=None):
     X_test = X_test.ix[:, 1:]
 
     # Cast X_train into numpy array and reshape into form suitable for lasagne
-    X_train_reshape = np.zeros((len(X_train), 1, 96, 96), dtype=np.float16)
+    X_train_reshape = np.zeros((len(X_train), 1, 96, 96), dtype=np.float32)
     for i, row in enumerate(np.array(X_train)):
         X_train_reshape[i] = row.reshape(1, 96, 96)
     X_train = X_train_reshape
 
     # Convert y_train into numpy array
-    y_train = np.array(y_train, dtype=np.float16)
+    y_train = np.array(y_train, dtype=np.float32)
 
     # Cast X_test into numpy array and reshape into form suitable for lasagne
-    X_test_reshape = np.zeros((len(X_test), 1, 96, 96), dtype=np.float16)
+    X_test_reshape = np.zeros((len(X_test), 1, 96, 96), dtype=np.float32)
     for i, row in enumerate(np.array(X_test)):
         X_test_reshape[i] = row.reshape(1, 96, 96)
     X_test = X_test_reshape
@@ -174,7 +177,6 @@ def build_simple_cnn(input_var=None):
 
 def build_complex_cnn(input_var=None):
     """Build a CNN specific to MNIST data."""
-    # INPUT -> [CONV -> RELU -> CONV -> RELU -> POOL]*3 -> [FC -> RELU]*2 -> FC
 
     start_time = time.time()
 
@@ -182,48 +184,33 @@ def build_complex_cnn(input_var=None):
     network = lasagne.layers.InputLayer(shape=(None, 1, 96, 96),
                                         input_var=input_var)
 
-    # Add first [CONV -> RELU -> CONV -> RELU -> POOL]
+    # Add first [CONV -> RELU -> POOL]
     network = lasagne.layers.Conv2DLayer(
-        network, num_filters=32, filter_size=(5, 5),
+        network, num_filters=32, filter_size=(3, 3),
         nonlinearity=lasagne.nonlinearities.rectify)
-
-    network = lasagne.layers.Conv2DLayer(
-        network, num_filters=32, filter_size=(5, 5),
-        nonlinearity=lasagne.nonlinearities.rectify)
-
     network = lasagne.layers.MaxPool2DLayer(network, pool_size=(2, 2))
 
-    # Add second [CONV -> RELU -> CONV -> RELU -> POOL]
+    # Add second [CONV -> RELU -> POOL]
     network = lasagne.layers.Conv2DLayer(
-        network, num_filters=32, filter_size=(5, 5),
+        network, num_filters=64, filter_size=(2, 2),
         nonlinearity=lasagne.nonlinearities.rectify)
-
-    network = lasagne.layers.Conv2DLayer(
-        network, num_filters=32, filter_size=(5, 5),
-        nonlinearity=lasagne.nonlinearities.rectify)
-
     network = lasagne.layers.MaxPool2DLayer(network, pool_size=(2, 2))
 
-    # Add third [CONV -> RELU -> CONV -> RELU -> POOL]
+    # Add third [CONV -> RELU -> POOL]
     network = lasagne.layers.Conv2DLayer(
-        network, num_filters=32, filter_size=(5, 5),
+        network, num_filters=128, filter_size=(2, 2),
         nonlinearity=lasagne.nonlinearities.rectify)
-
-    network = lasagne.layers.Conv2DLayer(
-        network, num_filters=32, filter_size=(5, 5),
-        nonlinearity=lasagne.nonlinearities.rectify)
-
     network = lasagne.layers.MaxPool2DLayer(network, pool_size=(2, 2))
 
     # Add first [FC -> RELU], throw in dropout
-    network = lasagne.layers.DropoutLayer(network, p=0.5)
+    # network = lasagne.layers.DropoutLayer(network, p=0.5)
     network = lasagne.layers.DenseLayer(
-        network, num_units=256, nonlinearity=lasagne.nonlinearities.rectify)
+        network, num_units=500, nonlinearity=lasagne.nonlinearities.rectify)
 
     # Add second [FC -> RELU], throw in dropout
-    network = lasagne.layers.DropoutLayer(network, p=0.5)
+    # network = lasagne.layers.DropoutLayer(network, p=0.5)
     network = lasagne.layers.DenseLayer(
-        network, num_units=128, nonlinearity=lasagne.nonlinearities.rectify)
+        network, num_units=500, nonlinearity=lasagne.nonlinearities.rectify)
 
     # Add output layer, throw in dropout; use identity fn for nonlinearity
     network = lasagne.layers.DropoutLayer(network, p=0.5)
@@ -250,12 +237,19 @@ def iterate_minibatches(inputs, targets, batchsize, shuffle=False):
         yield inputs[excerpt], targets[excerpt]
 
 
-def main(verbose=3, num_epochs=30, batch_size=500):
+def iterate_test_minibatches(inputs, batchsize, shuffle=False):
+    """Train via batches to avoid memory error."""
+    for start_idx in range(0, len(inputs) - batchsize + 1, batchsize):
+        excerpt = slice(start_idx, start_idx + batchsize)
+        yield inputs[excerpt]
+
+
+def main(verbose=3, num_epochs=1, batch_size=100):
     """."""
 
     set_verbosity(verbose)
 
-    parse_data()
+    # parse_data()
 
     # X_train, y_train, X_val, y_val, X_test = load_data(
     #    validation_size=0.33)
@@ -273,10 +267,10 @@ def main(verbose=3, num_epochs=30, batch_size=500):
     logging.debug("X_test shape: " + str(X_test.shape) + '\n')
 
     # Create tensors for X and y and build network
-    input_var = T.tensor4('inputs')
-    target_var = T.matrix('targets')
+    input_var = T.ftensor4('inputs')
+    target_var = T.fmatrix('targets')
 
-    network = build_complex_cnn(input_var)
+    network = build_simple_cnn(input_var)
 
     prediction = lasagne.layers.get_output(network)
     loss = lasagne.objectives.squared_error(prediction, target_var)
@@ -296,6 +290,24 @@ def main(verbose=3, num_epochs=30, batch_size=500):
 
     val_fn = theano.function([input_var, target_var], test_loss)
     '''
+
+    columns = ["left_eye_center_x", "left_eye_center_y",
+               "right_eye_center_x", "right_eye_center_y",
+               "left_eye_inner_corner_x", "left_eye_inner_corner_y",
+               "left_eye_outer_corner_x", "left_eye_outer_corner_y",
+               "right_eye_inner_corner_x", "right_eye_inner_corner_y",
+               "right_eye_outer_corner_x", "right_eye_outer_corner_y",
+               "left_eyebrow_inner_end_x", "left_eyebrow_inner_end_y",
+               "left_eyebrow_outer_end_x", "left_eyebrow_outer_end_y",
+               "right_eyebrow_inner_end_x", "right_eyebrow_inner_end_y",
+               "right_eyebrow_outer_end_x", "right_eyebrow_outer_end_y",
+               "nose_tip_x", "nose_tip_y",
+               "mouth_left_corner_x", "mouth_left_corner_y",
+               "mouth_right_corner_x", "mouth_right_corner_y",
+               "mouth_center_top_lip_x", "mouth_center_top_lip_y",
+               "mouth_center_bottom_lip_x", "mouth_center_bottom_lip_y"]
+
+    predict_function = theano.function([input_var], test_prediction)
 
     logging.info("Starting training...")
     for epoch in range(num_epochs):
@@ -334,33 +346,39 @@ def main(verbose=3, num_epochs=30, batch_size=500):
         # print("  validation accuracy:\t\t{:.2f} %".format(
         #    val_acc / val_batches * 100))
 
+        if (epoch + 1) % 15 == 0:
+            logging.info("Intermediate prediction at epoch " + str(epoch + 1))
+            start_time = time.time()
+
+            frames = []
+            for i, batch in enumerate(iterate_test_minibatches(X_test, batch_size)):
+                y_pred = predict_function(batch)
+                df = pd.DataFrame(y_pred, columns=columns)
+                df.index += (i * batch_size) + 1
+                frames.append(df)
+
+            predictions = pd.concat(frames)
+            predictions.index.name = "ImageId"
+            predictions.to_csv("raw_predictions_" + str(epoch + 1) + ".csv")
+
+            time_diff = time.time() - start_time
+            logging.info(
+                "Predictions complete in " + str(time_diff) + " seconds")
+
+    # Do final prediction
     logging.info("Finished training; beginning prediction")
     start_time = time.time()
 
-    predict_function = theano.function([input_var], test_prediction)
+    frames = []
+    for i, batch in enumerate(iterate_test_minibatches(X_test, batch_size)):
+        y_pred = predict_function(batch)
+        df = pd.DataFrame(y_pred, columns=columns)
+        df.index += (i * batch_size) + 1
+        frames.append(df)
 
-    y_pred = predict_function(X_test)
-
-    columns = ["left_eye_center_x", "left_eye_center_y",
-               "right_eye_center_x", "right_eye_center_y",
-               "left_eye_inner_corner_x", "left_eye_inner_corner_y",
-               "left_eye_outer_corner_x", "left_eye_outer_corner_y",
-               "right_eye_inner_corner_x", "right_eye_inner_corner_y",
-               "right_eye_outer_corner_x", "right_eye_outer_corner_y",
-               "left_eyebrow_inner_end_x", "left_eyebrow_inner_end_y",
-               "left_eyebrow_outer_end_x", "left_eyebrow_outer_end_y",
-               "right_eyebrow_inner_end_x", "right_eyebrow_inner_end_y",
-               "right_eyebrow_outer_end_x", "right_eyebrow_outer_end_y",
-               "nose_tip_x", "nose_tip_y",
-               "mouth_left_corner_x", "mouth_left_corner_y",
-               "mouth_right_corner_x", "mouth_right_corner_y",
-               "mouth_center_top_lip_x", "mouth_center_top_lip_y",
-               "mouth_center_bottom_lip_x", "mouth_center_bottom_lip_y"]
-
-    predictions_df = pd.DataFrame(y_pred, columns=columns)
-    predictions_df.index += 1
-    predictions_df.index.name = "ImageId"
-    predictions_df.to_csv("raw_predictions.csv")
+    predictions = pd.concat(frames)
+    predictions.index.name = "ImageId"
+    predictions.to_csv("raw_predictions_final.csv")
 
     time_diff = time.time() - start_time
     logging.info("Predictions complete in " + str(time_diff) + " seconds")

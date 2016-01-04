@@ -68,8 +68,8 @@ def main():
 
     set_verbosity(3)
 
-    out_df = load_csv_files()
-    out_df.to_csv("Predictions.csv", index=False)
+    out_df = load_csv_files("raw_predictions_195.csv")
+    out_df.to_csv("Predictions_195.csv", index=False)
 
 if __name__ == "__main__":
     main()
