@@ -178,11 +178,21 @@ def main():
 
     predict_function = theano.function([input_var], test_prediction)
 
-    frames = []
+    frames, next_i = [], 0
     for i, batch in enumerate(iterate_test_minibatches(X_test, batch_size)):
         y_pred = predict_function(batch)
         df = pd.DataFrame(np.argmax(y_pred, axis=1), columns=["Label"])
         df.index += (i * batch_size) + 1
+        next_i = i + 1
+        frames.append(df)
+
+    # If batch_size doesn't divide length of X_test perfectly,
+    # predict on remaining elements
+    if (next_i * batch_size) < len(X_test):
+        y_pred = predict_function(
+            X_test[slice((next_i * batch_size), len(X_test))])
+        df = pd.DataFrame(np.argmax(y_pred, axis=1), columns=["Label"])
+        df.index += (next_i * batch_size) + 1
         frames.append(df)
 
     predictions = pd.concat(frames)
