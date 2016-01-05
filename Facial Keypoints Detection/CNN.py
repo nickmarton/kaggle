@@ -4,6 +4,8 @@ Convolutional Neural Network for kaggle facial keypoints detection contest.
 Note: Only the labels contain missing values in all of the data.
 """
 
+# THEANO_FLAGS=mode=FAST_RUN,device=cpu,floatX=float32 python CNN.py
+
 from __future__ import division, print_function
 import time
 import theano
@@ -203,12 +205,12 @@ def build_complex_cnn(input_var=None):
     network = lasagne.layers.MaxPool2DLayer(network, pool_size=(2, 2))
 
     # Add first [FC -> RELU], throw in dropout
-    # network = lasagne.layers.DropoutLayer(network, p=0.5)
+    network = lasagne.layers.DropoutLayer(network, p=0.5)
     network = lasagne.layers.DenseLayer(
         network, num_units=500, nonlinearity=lasagne.nonlinearities.rectify)
 
     # Add second [FC -> RELU], throw in dropout
-    # network = lasagne.layers.DropoutLayer(network, p=0.5)
+    network = lasagne.layers.DropoutLayer(network, p=0.5)
     network = lasagne.layers.DenseLayer(
         network, num_units=500, nonlinearity=lasagne.nonlinearities.rectify)
 
@@ -244,7 +246,7 @@ def iterate_test_minibatches(inputs, batchsize, shuffle=False):
         yield inputs[excerpt]
 
 
-def main(verbose=3, num_epochs=1, batch_size=100):
+def main(verbose=3, num_epochs=1, batch_size=500):
     """."""
 
     set_verbosity(verbose)
@@ -270,7 +272,7 @@ def main(verbose=3, num_epochs=1, batch_size=100):
     input_var = T.ftensor4('inputs')
     target_var = T.fmatrix('targets')
 
-    network = build_simple_cnn(input_var)
+    network = build_complex_cnn(input_var)
 
     prediction = lasagne.layers.get_output(network)
     loss = lasagne.objectives.squared_error(prediction, target_var)
@@ -322,7 +324,7 @@ def main(verbose=3, num_epochs=1, batch_size=100):
             inputs, targets = batch
             train_err += train_fn(inputs, targets)
             train_batches += 1
-            logging.info("Done " + str(train_batches) + " batches")
+            logging.debug("Done " + str(train_batches) + " batches")
 
         '''
         # And a full pass over the validation data:
@@ -346,15 +348,25 @@ def main(verbose=3, num_epochs=1, batch_size=100):
         # print("  validation accuracy:\t\t{:.2f} %".format(
         #    val_acc / val_batches * 100))
 
-        if (epoch + 1) % 15 == 0:
+        if (epoch + 1) % 1 == 0:
             logging.info("Intermediate prediction at epoch " + str(epoch + 1))
             start_time = time.time()
 
-            frames = []
+            frames, next_i = [], 0
             for i, batch in enumerate(iterate_test_minibatches(X_test, batch_size)):
                 y_pred = predict_function(batch)
                 df = pd.DataFrame(y_pred, columns=columns)
                 df.index += (i * batch_size) + 1
+                next_i = i + 1
+                frames.append(df)
+
+            # If batch_size doesn't divide length of X_test perfectly,
+            # predict on remaining elements
+            if (next_i * batch_size) < len(X_test):
+                y_pred = predict_function(
+                    X_test[slice((next_i * batch_size), len(X_test))])
+                df = pd.DataFrame(y_pred, columns=columns)
+                df.index += (next_i * batch_size) + 1
                 frames.append(df)
 
             predictions = pd.concat(frames)
@@ -369,11 +381,21 @@ def main(verbose=3, num_epochs=1, batch_size=100):
     logging.info("Finished training; beginning prediction")
     start_time = time.time()
 
-    frames = []
+    frames, next_i = [], 0
     for i, batch in enumerate(iterate_test_minibatches(X_test, batch_size)):
         y_pred = predict_function(batch)
         df = pd.DataFrame(y_pred, columns=columns)
         df.index += (i * batch_size) + 1
+        next_i = i + 1
+        frames.append(df)
+
+    # If batch_size doesn't divide length of X_test perfectly,
+    # predict on remaining elements
+    if (next_i * batch_size) < len(X_test):
+        y_pred = predict_function(
+            X_test[slice((next_i * batch_size), len(X_test))])
+        df = pd.DataFrame(y_pred, columns=columns)
+        df.index += (next_i * batch_size) + 1
         frames.append(df)
 
     predictions = pd.concat(frames)
@@ -382,6 +404,7 @@ def main(verbose=3, num_epochs=1, batch_size=100):
 
     time_diff = time.time() - start_time
     logging.info("Predictions complete in " + str(time_diff) + " seconds")
+
 
 if __name__ == "__main__":
     main()

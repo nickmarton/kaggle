@@ -1,3 +1,7 @@
+"""Convolutional Neural Network for Digit Recognition."""
+
+# THEANO_FLAGS=mode=FAST_RUN,device=cpu,floatX=float32 python CNN.py
+
 from __future__ import division, print_function
 import time
 import numpy as np
@@ -75,15 +79,15 @@ def build_cnn(input_var=None):
                                         input_var=input_var)
 
     network = lasagne.layers.Conv2DLayer(
-        network, num_filters=70,
-        filter_size=(6, 6), nonlinearity=lasagne.nonlinearities.rectify)
+        network, num_filters=32,
+        filter_size=(5, 5), nonlinearity=lasagne.nonlinearities.rectify)
 
     network = lasagne.layers.MaxPool2DLayer(
         network, pool_size=(2, 2))
 
     network = lasagne.layers.Conv2DLayer(
-        network, num_filters=70,
-        filter_size=(6, 6), nonlinearity=lasagne.nonlinearities.rectify)
+        network, num_filters=32,
+        filter_size=(5, 5), nonlinearity=lasagne.nonlinearities.rectify)
 
     network = lasagne.layers.MaxPool2DLayer(
         network, pool_size=(2, 2))
@@ -105,7 +109,7 @@ def build_cnn(input_var=None):
 
 def main():
     """."""
-    num_epochs, batch_size = 350, 1000
+    num_epochs, batch_size = 100, 1000
 
     # X_train, y_train, X_val, y_val, X_test = load_data(
     #    validation_size=0.99)
