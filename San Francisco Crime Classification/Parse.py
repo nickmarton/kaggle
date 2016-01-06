@@ -38,7 +38,7 @@ def get_season(x):
     return summer, fall, winter, spring
 
 
-def parse_data(df, logodds):
+def make_features(df, logodds):
     """Parse a given DataFrame into numeric form."""
     # Build log-odd address features
     address_features = df["Address"].apply(lambda x: logodds[x])
@@ -81,11 +81,8 @@ def parse_data(df, logodds):
     return features
 
 
-def load_data(train_file="train.csv", test_file="test.csv",
-              validation_size=None):
+def parse_data(train, test):
     """Load data from train and test files respectively."""
-    train = pd.read_csv(train_file)
-    test = pd.read_csv(test_file)
 
     # Scale X and Y features in train to 0 mean, unit variance
     xy_scaler = StandardScaler()
@@ -105,7 +102,7 @@ def load_data(train_file="train.csv", test_file="test.csv",
     good_attributes = list(
         set(train.columns) - ((set(train.columns)) ^ (set(test.columns))))
     X_train = train[good_attributes]
-    y_train = train["Category"]
+    y_train = pd.DataFrame(train["Category"], columns=["Category"])
 
     X_test = test[good_attributes]
 
@@ -133,7 +130,7 @@ def load_data(train_file="train.csv", test_file="test.csv",
         logodds[addr] = pd.Series(logodds[addr])
         logodds[addr].index = range(len(categories))
 
-    X_train = parse_data(X_train, logodds)
+    X_train = make_features(X_train, logodds)
 
     # second make logodds for testing set and parse X_test
     test_addresses = sorted(test["Address"].unique())
@@ -151,7 +148,7 @@ def load_data(train_file="train.csv", test_file="test.csv",
         PA = (train_A_counts[addr] + test_A_counts[addr]) / (len(test) + len(train))
         logoddsPA[addr] = np.log(PA) - np.log(1. - PA)
 
-    X_test = parse_data(X_test, logodds)
+    X_test = make_features(X_test, logodds)
 
     assert X_train.columns.tolist() == X_test.columns.tolist()
     columns = X_train.columns.tolist()
@@ -160,9 +157,30 @@ def load_data(train_file="train.csv", test_file="test.csv",
     X_train[columns] = scaler.transform(X_train)
     X_test[columns] = scaler.transform(X_test[columns])
 
-    # category_map = {categories[i]: i + 1 for i in range(len(categories))}
-    # y_train = y_train.apply(map_categories, args=(category_map,))
+    X_train.to_csv("X_train_parsed.csv", index=False)
+    y_train.to_csv("y_train_parsed.csv", index=False)
+    X_test.to_csv("X_test_parsed.csv", index=False)
 
+    return X_train, y_train, X_test
+
+
+def load_data(train_file="train.csv", test_file="test.csv", label_file=None,
+              validation_size=None, parse=True):
+    """
+    Load data from train and test; optionally parse and extract validation set.
+    """
+
+    train = pd.read_csv(train_file)
+    test = pd.read_csv(test_file)
+
+    # If parse flag thown, parse data in train and test DataFrames,
+    # otherwise, just load them.
+    if parse:
+        X_train, y_train, X_test = parse_data(train, test)
+    else:
+        X_train, y_train, X_test = train, pd.read_csv(label_file), test
+
+    # Optionally extract validation set
     if validation_size:
         try:
             X_train, X_valid, y_train, y_valid = train_test_split(
@@ -178,12 +196,17 @@ def load_data(train_file="train.csv", test_file="test.csv",
 
 def main():
     """."""
-    X_train, y_train, X_valid, y_valid, X_test = load_data(validation_size=.2)
+
+    X_train, y_train, X_test = load_data(train_file="X_train_parsed.csv",
+                                         test_file="X_test_parsed.csv",
+                                         label_file="y_train_parsed.csv",
+                                         parse=False)
     print (np.array(X_train).shape)
     print (np.array(y_train).shape)
-    print (np.array(X_valid).shape)
-    print (np.array(y_valid).shape)
     print (np.array(X_test).shape)
+
+    # X_train, y_train, X_test = load_data()
+
 
 if __name__ == "__main__":
     main()
